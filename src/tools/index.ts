@@ -18,6 +18,7 @@ import { parseSyllabus } from "../parsers/syllabus.js";
 import { parseSearchResults } from "../parsers/search.js";
 import { parseAssignment } from "../parsers/assignment.js";
 import type { CourseSummary } from "../schemas/index.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 
 export interface ToolDeps {
   client: UtolClient;
@@ -27,6 +28,21 @@ export interface ToolDeps {
 /** 成功結果を JSON テキストとして返す。 */
 function ok(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
+}
+
+/**
+ * OAuth スコープでツールが許可されているか検証する。
+ * stdio 接続時は authInfo が存在しないためスキップする。
+ */
+function assertToolAllowed(toolName: string, extra: { authInfo?: AuthInfo }): void {
+  if (!extra.authInfo) return;
+  const scopes = extra.authInfo.scopes;
+  if (scopes.length === 0) return;
+  if (!scopes.includes(`tool:${toolName}`)) {
+    throw new AccessBoundaryError(
+      `ツール "${toolName}" はこのセッションでは許可されていません。認可時に許可するツールを選択してください。`,
+    );
+  }
 }
 
 /** エラーを「次に何をすべきか」を添えて返す。 */
@@ -74,8 +90,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "auth_status",
     "UTOL にログイン済みかを確認する。未ログインなら手動ログインを案内する（自動ログインはしない）。",
     {},
-    async () => {
+    async (_args, extra) => {
       try {
+        assertToolAllowed("auth_status", extra);
         const authenticated = await deps.cache.getOrFetch(
           "auth:status",
           async () => {
@@ -105,8 +122,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     {
       refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得"),
     },
-    async ({ refresh }) => {
+    async ({ refresh }, extra) => {
       try {
+        assertToolAllowed("list_courses", extra);
         const courses = await fetchCourses(deps, refresh === true);
         // 出力を軽量化（コンテキスト膨張を防ぐ）
         return ok(
@@ -133,8 +151,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       idnumber: z.string().describe("コースの idnumber（例: 2025_0340_FEN-EE3902E1_01）"),
       refresh: z.boolean().optional(),
     },
-    async ({ idnumber, refresh }) => {
+    async ({ idnumber, refresh }, extra) => {
       try {
+        assertToolAllowed("get_course", extra);
         await assertEnrolled(deps, idnumber);
         const detail = await deps.cache.getOrFetch(
           `course:${idnumber}`,
@@ -181,8 +200,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "list_assignments",
     "全科目横断の課題・テスト一覧と締切を取得する。",
     { refresh: z.boolean().optional() },
-    async ({ refresh }) => {
+    async ({ refresh }, extra) => {
       try {
+        assertToolAllowed("list_assignments", extra);
         const tasks = await deps.cache.getOrFetch(
           "tasks:all",
           async () => parseTaskList(await deps.client.getHtml(UTOL_PATHS.task)),
@@ -203,8 +223,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       idnumber: z.string().describe("コースの idnumber"),
       url: z.string().describe("課題詳細ページの URL（list_assignments/get_course の url）"),
     },
-    async ({ idnumber, url }) => {
+    async ({ idnumber, url }, extra) => {
       try {
+        assertToolAllowed("get_assignment", extra);
         await assertEnrolled(deps, idnumber);
         const html = await deps.client.getHtml(toPath(url));
         return ok(parseAssignment(html, idnumber));
@@ -226,8 +247,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         .optional()
         .describe("UTAS シラバス URL（search_courses の syllabusUrl）。受講登録外コースはこちらを渡す。"),
     },
-    async ({ idnumber, syllabusUrl }) => {
+    async ({ idnumber, syllabusUrl }, extra) => {
       try {
+        assertToolAllowed("get_syllabus", extra);
         // 受講登録済みコースは、コースページから UTAS シラバスリンクを取得する。
         let url = syllabusUrl;
         if (!url) {
@@ -266,8 +288,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       year: z.number().int().optional().describe("開講年度"),
       limit: z.number().int().min(1).max(100).optional().describe("最大件数（既定30）"),
     },
-    async (args) => {
+    async (args, extra) => {
       try {
+        assertToolAllowed("search_courses", extra);
         // 注: 検索は POST + 隠しフォームトークンの可能性が高い。
         // 技術検証スパイクで実エンドポイントとパラメータを確定し、ここを実装する。
         const results = await searchCourses(deps, args);
@@ -289,8 +312,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       resourceId: z.string().describe("教材の resourceId（get_course の materials[].resourceId）"),
       destPath: z.string().describe("保存先の絶対パス"),
     },
-    async ({ idnumber, resourceId, destPath }) => {
+    async ({ idnumber, resourceId, destPath }, extra) => {
       try {
+        assertToolAllowed("download_material", extra);
         await assertEnrolled(deps, idnumber);
         const course = await deps.cache.getOrFetch(`course:${idnumber}`, async () =>
           parseCourse(
@@ -330,8 +354,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "list_announcements",
     "お知らせ一覧を取得する（時間割ヘッダー左上の吹き出しアイコン）。",
     { refresh: z.boolean().optional() },
-    async ({ refresh }) => {
+    async ({ refresh }, extra) => {
       try {
+        assertToolAllowed("list_announcements", extra);
         const items = await deps.cache.getOrFetch(
           "announcements:header",
           async () => parseHeaderAnnouncements(await deps.client.getHtml(UTOL_PATHS.timetable)),
@@ -349,8 +374,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "list_updates",
     "更新情報（最近の活動）を取得する（時間割ヘッダー左上のベルアイコン）。教材追加・課題追加・提出・お知らせ等の通知。",
     { refresh: z.boolean().optional() },
-    async ({ refresh }) => {
+    async ({ refresh }, extra) => {
       try {
+        assertToolAllowed("list_updates", extra);
         const items = await deps.cache.getOrFetch(
           "updates:header",
           async () => parseHeaderUpdates(await deps.client.getHtml(UTOL_PATHS.timetable)),
@@ -368,8 +394,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "list_messages",
     "メッセージ一覧（UTOL のメッセージ＝inquiry）を取得する。一覧のメタ情報のみで本文は含まない。",
     { refresh: z.boolean().optional() },
-    async ({ refresh }) => {
+    async ({ refresh }, extra) => {
       try {
+        assertToolAllowed("list_messages", extra);
         const messages = await deps.cache.getOrFetch(
           "messages:all",
           async () => parseMessages(await deps.client.getHtml("/lms/inquiry_list")),
@@ -394,8 +421,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       contentsType: z.string().optional().describe("既定は list_assignments の contentsType（通常 '1'）"),
       confirm: z.boolean().optional().describe("true で実際に変更を実行。省略時はプレビューのみ。"),
     },
-    async ({ idnumber, contentsId, noSubmission, contentsType, confirm }) => {
+    async ({ idnumber, contentsId, noSubmission, contentsType, confirm }, extra) => {
       try {
+        assertToolAllowed("set_task_no_submission", extra);
         await assertEnrolled(deps, idnumber);
         const listHtml = await deps.client.getHtml(UTOL_PATHS.task);
         const tasks = parseTaskList(listHtml);
@@ -469,8 +497,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       idnumber: z.string().describe("登録するコースの idnumber（search_courses で取得）"),
       confirm: z.boolean().optional().describe("true で実際に登録を実行。省略時はプレビューのみ。"),
     },
-    async ({ idnumber, confirm }) => {
+    async ({ idnumber, confirm }, extra) => {
       try {
+        assertToolAllowed("register_course", extra);
         // 対象コースページから登録フォーム（可能な場合のみ存在）を取得
         const html = await deps.client.getHtml(
           `${UTOL_PATHS.course}?idnumber=${encodeURIComponent(idnumber)}`,
@@ -514,8 +543,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       idnumber: z.string().describe("解除するコースの idnumber"),
       confirm: z.boolean().optional().describe("true で実際に解除を実行。省略時はプレビューのみ。"),
     },
-    async ({ idnumber, confirm }) => {
+    async ({ idnumber, confirm }, extra) => {
       try {
+        assertToolAllowed("unregister_course", extra);
         await assertEnrolled(deps, idnumber);
         const courses = await fetchCourses(deps);
         const target = courses.find((c) => c.idnumber === idnumber);
@@ -550,8 +580,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "refresh_cache",
     "主要な一覧（受講登録コース・課題一覧）を再取得してキャッシュを更新する。",
     {},
-    async () => {
+    async (_args, extra) => {
       try {
+        assertToolAllowed("refresh_cache", extra);
         const [courses, tasks] = await Promise.all([
           fetchCourses(deps, true),
           deps.cache.getOrFetch(

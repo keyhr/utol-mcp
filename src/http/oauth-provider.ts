@@ -13,6 +13,7 @@ import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/serv
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { OAuthStore } from "./oauth-store.js";
 import { renderConsentPage } from "./consent-page.js";
+import { scopePrefix } from "./tool-scopes.js";
 import { logger } from "../logger.js";
 
 const ACCESS_TOKEN_TTL = 3600;       // 1 hour
@@ -88,7 +89,6 @@ export class UtolOAuthProvider implements OAuthServerProvider {
     if (!passphrase) {
       res.status(200).type("html").send(renderConsentPage({
         clientName: client.client_name ?? client.client_id,
-        scopes: params.scopes ?? [],
         hiddenFields,
       }));
       return;
@@ -99,7 +99,6 @@ export class UtolOAuthProvider implements OAuthServerProvider {
       logger.warn("authorize: レート制限超過", { ip });
       res.status(429).type("html").send(renderConsentPage({
         clientName: client.client_name ?? client.client_id,
-        scopes: params.scopes ?? [],
         error: "試行回数が上限を超えました。しばらく待ってから再試行してください。",
         hiddenFields,
       }));
@@ -110,20 +109,28 @@ export class UtolOAuthProvider implements OAuthServerProvider {
       logger.warn("authorize: パスフレーズ不一致", { ip });
       res.status(403).type("html").send(renderConsentPage({
         clientName: client.client_name ?? client.client_id,
-        scopes: params.scopes ?? [],
         error: "パスフレーズが正しくありません。",
         hiddenFields,
       }));
       return;
     }
 
-    logger.info("authorize: 承認されました", { clientId: client.client_id, ip });
+    const grantedTools = (req.body?.granted_tools as string || "")
+      .split(",")
+      .filter(Boolean);
+    const toolScopes = grantedTools.map(scopePrefix);
+
+    logger.info("authorize: 承認されました", {
+      clientId: client.client_id,
+      tools: grantedTools,
+      ip,
+    });
 
     const code = await this.store.createCode({
       clientId: client.client_id,
       codeChallenge: params.codeChallenge,
       redirectUri: params.redirectUri,
-      scopes: params.scopes ?? [],
+      scopes: toolScopes,
       resource: params.resource?.toString(),
     });
 
