@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { Command } from "commander";
 import { logger } from "./logger.js";
-import { checkAuthStandalone, interactiveLogin, logout } from "./browser/session.js";
+import { checkAuthStandalone, interactiveLogin, importCookies, logout } from "./browser/session.js";
 import { UtolClient } from "./browser/client.js";
 import { startServer } from "./mcp/server.js";
 
@@ -27,6 +27,20 @@ export async function runCli(argv: string[]): Promise<void> {
       const ok = await interactiveLogin({ timeoutMs: opts.timeout });
       if (!ok) {
         logger.error("ログインが完了しませんでした。もう一度 `utol-mcp login` を実行してください。");
+        process.exitCode = 1;
+      }
+    });
+
+  program
+    .command("login-import")
+    .description("Cookie JSON をインポートしてログインする（GUI 不要の代替手段）")
+    .argument("<cookie-file>", "Playwright 形式の Cookie JSON ファイルパス")
+    .action(async (cookieFile: string) => {
+      const { readFile } = await import("node:fs/promises");
+      const json = await readFile(cookieFile, "utf8");
+      const ok = await importCookies(json);
+      if (!ok) {
+        logger.error("セッション確立に失敗しました。Cookie が有効か確認してください。");
         process.exitCode = 1;
       }
     });

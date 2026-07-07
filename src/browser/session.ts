@@ -187,6 +187,41 @@ export async function checkAuthStandalone(): Promise<boolean> {
 }
 
 /**
+ * Cookie JSON 文字列をインポートし、UTOL セッションを確立する。
+ * GUI なしでログインするための代替手段。
+ *
+ * cookies は Playwright の Cookie 形式の JSON 配列:
+ *   [{ name, value, domain, path, ... }, ...]
+ */
+export async function importCookies(cookiesJson: string): Promise<boolean> {
+  const cookies = JSON.parse(cookiesJson) as Array<{
+    name: string;
+    value: string;
+    domain: string;
+    path: string;
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "Strict" | "Lax" | "None";
+    expires?: number;
+  }>;
+
+  const context = await launchContext({ headless: true });
+  try {
+    await context.addCookies(cookies);
+    const page = context.pages()[0] ?? (await context.newPage());
+    const ok = await establishSession(page);
+    if (ok) {
+      logger.info("Cookie インポートによるセッション確立に成功しました。");
+    } else {
+      logger.warn("Cookie をインポートしましたが、セッション確立に失敗しました。Cookie が有効か確認してください。");
+    }
+    return ok;
+  } finally {
+    await context.close();
+  }
+}
+
+/**
  * ローカルのセッション情報とキャッシュを削除する。
  */
 export async function logout(): Promise<void> {
