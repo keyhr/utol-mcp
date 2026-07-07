@@ -1,3 +1,4 @@
+import { timingSafeEqual, scryptSync, randomBytes } from "node:crypto";
 import type { Response } from "express";
 import type {
   OAuthClientInformationFull,
@@ -11,9 +12,38 @@ import type {
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { OAuthStore } from "./oauth-store.js";
+import { renderConsentPage } from "./consent-page.js";
+import { logger } from "../logger.js";
 
 const ACCESS_TOKEN_TTL = 3600;       // 1 hour
 const REFRESH_TOKEN_TTL = 30 * 86400; // 30 days
+
+const PASSPHRASE_RATE_LIMIT = new Map<string, { count: number; resetAt: number }>();
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = PASSPHRASE_RATE_LIMIT.get(ip);
+  if (!entry || now > entry.resetAt) {
+    PASSPHRASE_RATE_LIMIT.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= MAX_ATTEMPTS;
+}
+
+function verifyPassphrase(input: string): boolean {
+  const raw = process.env.UTOL_MCP_AUTH_PASSPHRASE;
+  if (!raw) {
+    logger.warn("UTOL_MCP_AUTH_PASSPHRASE が未設定です。authorize は全て拒否されます。");
+    return false;
+  }
+  const a = Buffer.from(input);
+  const b = Buffer.from(raw);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 class UtolClientsStore implements OAuthRegisteredClientsStore {
   constructor(private store: OAuthStore) {}
@@ -41,6 +71,54 @@ export class UtolOAuthProvider implements OAuthServerProvider {
     params: AuthorizationParams,
     res: Response,
   ): Promise<void> {
+    const req = res.req;
+    const passphrase = req.body?.passphrase as string | undefined;
+
+    const hiddenFields: Record<string, string> = {
+      client_id: client.client_id,
+      redirect_uri: params.redirectUri,
+      code_challenge: params.codeChallenge,
+      code_challenge_method: "S256",
+      response_type: "code",
+    };
+    if (params.state) hiddenFields.state = params.state;
+    if (params.scopes?.length) hiddenFields.scope = params.scopes.join(" ");
+    if (params.resource) hiddenFields.resource = params.resource.toString();
+
+    if (!passphrase) {
+      res.status(200).type("html").send(renderConsentPage({
+        clientName: client.client_name ?? client.client_id,
+        scopes: params.scopes ?? [],
+        hiddenFields,
+      }));
+      return;
+    }
+
+    const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+    if (!checkRateLimit(ip)) {
+      logger.warn("authorize: レート制限超過", { ip });
+      res.status(429).type("html").send(renderConsentPage({
+        clientName: client.client_name ?? client.client_id,
+        scopes: params.scopes ?? [],
+        error: "試行回数が上限を超えました。しばらく待ってから再試行してください。",
+        hiddenFields,
+      }));
+      return;
+    }
+
+    if (!verifyPassphrase(passphrase)) {
+      logger.warn("authorize: パスフレーズ不一致", { ip });
+      res.status(403).type("html").send(renderConsentPage({
+        clientName: client.client_name ?? client.client_id,
+        scopes: params.scopes ?? [],
+        error: "パスフレーズが正しくありません。",
+        hiddenFields,
+      }));
+      return;
+    }
+
+    logger.info("authorize: 承認されました", { clientId: client.client_id, ip });
+
     const code = await this.store.createCode({
       clientId: client.client_id,
       codeChallenge: params.codeChallenge,
