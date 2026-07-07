@@ -17,7 +17,7 @@
 - `get_assignment` — `idnumber`, `url`。課題詳細（読み取りのみ）。
 - `get_syllabus` — `idnumber`, `syllabusUrl?`。シラバス（UTAS）。受講登録外は `search_courses` の `syllabusUrl` を渡す。
 - `search_courses` — `keyword?`, `teacher?`, `year?`, `limit?`。コース検索（受講登録外可・公開情報のみ）。
-- `download_material` — `idnumber`, `resourceId`, `destPath?`。**教材の単一DLのみ**。`resourceId` は `get_course` の `materials[].resourceId`。`destPath` 省略時はファイル内容を base64 でインライン返却（リモートLLM向け）。
+- `download_material` — `idnumber`, `resourceId`, `mode?`。**教材の単一DLのみ**。`resourceId` は `get_course` の `materials[].resourceId`。`mode` は `"text"`（既定・PDF テキスト抽出）または `"image"`（PDF ページ画像化）。画像ファイルは mode によらず ImageContent で返す。
 - `list_announcements` — `refresh?`。お知らせ（ヘッダー吹き出し）。
 - `list_updates` — `refresh?`。更新情報＝最近の活動（ヘッダーベル）。
 - `list_messages` — `refresh?`。メッセージ一覧（/lms/inquiry_list）。

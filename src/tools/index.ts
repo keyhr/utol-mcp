@@ -19,6 +19,7 @@ import { parseSearchResults } from "../parsers/search.js";
 import { parseAssignment } from "../parsers/assignment.js";
 import type { CourseSummary } from "../schemas/index.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { extractText, renderPages } from "../util/pdf.js";
 
 export interface ToolDeps {
   client: UtolClient;
@@ -305,15 +306,17 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- download_material ---
   server.tool(
     "download_material",
-    "教材ファイルを単一・オンデマンドで取得する。大量DL不可。受講登録済みコースのみ。" +
-      "get_course の materials[].resourceId で対象教材を指定する。" +
-      "destPath を指定するとローカルへ保存し、省略するとレスポンスにファイル内容を含めて返す（リモートLLM向け）。",
+    "教材ファイルを取得し、LLM が読める形式で返す。単一・オンデマンド。受講登録済みコースのみ。" +
+      "get_course の materials[].resourceId で対象教材を指定する。",
     {
       idnumber: z.string().describe("コースの idnumber"),
       resourceId: z.string().describe("教材の resourceId（get_course の materials[].resourceId）"),
-      destPath: z.string().optional().describe("保存先の絶対パス（省略するとファイル内容をインラインで返す）"),
+      mode: z
+        .enum(["text", "image"])
+        .optional()
+        .describe("返却形式。text=テキスト抽出（既定）、image=ページ画像化。PDF以外のファイルは自動判定。"),
     },
-    async ({ idnumber, resourceId, destPath }, extra) => {
+    async ({ idnumber, resourceId, mode }, extra) => {
       try {
         assertToolAllowed("download_material", extra);
         await assertEnrolled(deps, idnumber);
@@ -332,34 +335,15 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         if (!material.fileName || !material.objectName || !material.contentId) {
           throw new UtolError("この教材はダウンロードに必要な情報を欠いています。");
         }
-        const { bytes, buffer } = await deps.client.downloadMaterial(
-          {
-            idnumber,
-            fileName: material.fileName,
-            objectName: material.objectName,
-            resourceId,
-            contentId: material.contentId,
-            endDate: material.openEndDate,
-          },
-          destPath,
-        );
-        if (destPath) {
-          return ok({ saved: destPath, bytes, fileName: material.fileName });
-        }
-        const mimeType = guessMimeType(material.fileName);
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify({ fileName: material.fileName, bytes, mimeType }) },
-            {
-              type: "resource" as const,
-              resource: {
-                uri: `utol://material/${encodeURIComponent(idnumber)}/${encodeURIComponent(resourceId)}/${encodeURIComponent(material.fileName)}`,
-                mimeType,
-                blob: buffer.toString("base64"),
-              },
-            },
-          ],
-        };
+        const { bytes, buffer } = await deps.client.downloadMaterial({
+          idnumber,
+          fileName: material.fileName,
+          objectName: material.objectName,
+          resourceId,
+          contentId: material.contentId,
+          endDate: material.openEndDate,
+        });
+        return materialToContent(buffer, material.fileName, bytes, mode ?? "text");
       } catch (err) {
         return fail(err);
       }
@@ -649,27 +633,82 @@ function toPath(urlOrPath: string): string {
   }
 }
 
-const MIME_MAP: Record<string, string> = {
-  ".pdf": "application/pdf",
-  ".doc": "application/msword",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xls": "application/vnd.ms-excel",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
+const IMAGE_MIME: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
-  ".svg": "image/svg+xml",
-  ".txt": "text/plain",
-  ".csv": "text/csv",
-  ".zip": "application/zip",
-  ".mp4": "video/mp4",
-  ".mp3": "audio/mpeg",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
 };
 
-function guessMimeType(fileName: string): string {
-  const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
-  return MIME_MAP[ext] ?? "application/octet-stream";
+function fileExt(fileName: string): string {
+  return fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+}
+
+function materialToContent(
+  buffer: Buffer,
+  fileName: string,
+  bytes: number,
+  mode: "text" | "image",
+): CallToolResult {
+  const ext = fileExt(fileName);
+  const meta = { fileName, bytes };
+
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(meta) },
+        { type: "image" as const, data: buffer.toString("base64"), mimeType: IMAGE_MIME[ext]! },
+      ],
+    };
+  }
+
+  if (ext === ".pdf") {
+    if (mode === "image") {
+      const pages = renderPages(buffer);
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify({ ...meta, pages: pages.length, mode: "image" }) },
+          ...pages.map((p) => ({ type: "image" as const, data: p.data, mimeType: p.mimeType })),
+        ],
+      };
+    }
+    const text = extractText(buffer);
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify({ ...meta, mode: "text" }) },
+        { type: "text" as const, text },
+      ],
+    };
+  }
+
+  if ([".txt", ".csv", ".md", ".tex", ".html", ".htm"].includes(ext)) {
+    return {
+      content: [
+        { type: "text" as const, text: JSON.stringify(meta) },
+        { type: "text" as const, text: buffer.toString("utf-8") },
+      ],
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          ...meta,
+          note: "この形式のテキスト抽出・画像化には対応していません。生データを base64 で返します。",
+        }),
+      },
+      {
+        type: "resource" as const,
+        resource: {
+          uri: `utol://material/${encodeURIComponent(fileName)}`,
+          blob: buffer.toString("base64"),
+        },
+      },
+    ],
+  };
 }

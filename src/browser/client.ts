@@ -1,8 +1,3 @@
-import { createWriteStream } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import type { BrowserContext, Page } from "playwright";
 import { minRequestIntervalMs, utolUrl, UTOL_ORIGIN } from "../config.js";
 import { AccessBoundaryError, NotAuthenticatedError } from "../errors.js";
@@ -246,17 +241,14 @@ export class UtolClient {
    *   1) GET /lms/course/make/tempfile?fileName&objectName&id=resourceId&idnumber → 一時 fileId
    *   2) GET /lms/course/material/setfiledown/<fileName>?fileName&fileId&resourceId&contentId&endDate → 本体
    */
-  async downloadMaterial(
-    m: {
-      idnumber: string;
-      fileName: string;
-      objectName: string;
-      resourceId: string;
-      contentId: string;
-      endDate?: string | null;
-    },
-    destPath?: string,
-  ): Promise<{ bytes: number; buffer: Buffer }> {
+  async downloadMaterial(m: {
+    idnumber: string;
+    fileName: string;
+    objectName: string;
+    resourceId: string;
+    contentId: string;
+    endDate?: string | null;
+  }): Promise<{ bytes: number; buffer: Buffer }> {
     return this.schedule(async () => {
       await this.ensureAuth();
       const context = await this.ensureContext();
@@ -293,10 +285,6 @@ export class UtolClient {
       }
       if (!res.ok()) throw new Error(`ダウンロードに失敗しました (HTTP ${res.status()})`);
       const buffer = await res.body();
-      if (destPath) {
-        await mkdir(dirname(destPath), { recursive: true });
-        await pipeline(Readable.from(buffer), createWriteStream(destPath));
-      }
       return { bytes: buffer.byteLength, buffer };
     });
   }
