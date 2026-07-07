@@ -143,8 +143,9 @@ export class UtolClient {
   /**
    * JS レンダリングが必要なページ向けフォールバック。
    * ページ遷移後の DOM を返す。
+   * waitFor を指定すると、そのセレクタが出現するまで最大 timeout ms 待機する。
    */
-  async renderHtml(path: string): Promise<string> {
+  async renderHtml(path: string, opts?: { waitFor?: string; timeout?: number }): Promise<string> {
     return this.schedule(async () => {
       await this.ensureAuth();
       const context = await this.ensureContext();
@@ -152,6 +153,11 @@ export class UtolClient {
       await this.page.goto(utolUrl(path), { waitUntil: "domcontentloaded" });
       if (looksLikeLoginPage(this.page.url(), "")) {
         throw new NotAuthenticatedError();
+      }
+      if (opts?.waitFor) {
+        await this.page
+          .waitForSelector(opts.waitFor, { timeout: opts.timeout ?? 10000 })
+          .catch(() => {});
       }
       return await this.page.content();
     });

@@ -227,7 +227,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
       try {
         assertToolAllowed("get_assignment", extra);
         await assertEnrolled(deps, idnumber);
-        const html = await deps.client.getHtml(toPath(url));
+        const html = await deps.client.renderHtml(toPath(url), { waitFor: ".ql-editor" });
         return ok(parseAssignment(html, idnumber));
       } catch (err) {
         return fail(err);
