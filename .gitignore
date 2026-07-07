@@ -1,0 +1,22 @@
+# 依存・ビルド成果物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# --- 機密: セッション情報（認証情報に準じる。絶対にコミットしない） ---
+# 既定のセッション保存先は ~/.utol-mcp/ だが、万一プロジェクト内に生成された場合も除外する
+.utol-mcp/
+browser-profile/
+*.session
+*.cookies
+
+# --- 個人情報を含むテストフィクスチャ ---
+# 実ログイン後の HTML には氏名・学籍番号・CSRFトークン等が含まれるため、
+# 匿名化していない生フィクスチャはコミットしない。
+test/fixtures/raw/
+
+# エディタ・OS
+.DS_Store
+.idea/
+.vscode/
+*.log

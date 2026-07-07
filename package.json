@@ -1,0 +1,48 @@
+{
+  "name": "utol-mcp",
+  "version": "0.1.0",
+  "description": "個人用ローカル実行の UTOL (UTokyo LMS) MCP サーバー。読み取り中心・手動SSOログイン前提。",
+  "type": "module",
+  "bin": {
+    "utol-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && npm run test",
+    "postinstall": "playwright install chromium"
+  },
+  "keywords": [
+    "utol",
+    "utokyo",
+    "lms",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "cheerio": "^1.0.0",
+    "commander": "^12.1.0",
+    "playwright": "^1.48.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
