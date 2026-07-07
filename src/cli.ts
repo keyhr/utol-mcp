@@ -79,9 +79,17 @@ export async function runCli(argv: string[]): Promise<void> {
 
   program
     .command("serve", { isDefault: true })
-    .description("MCP サーバー（stdio）を起動する")
-    .action(async () => {
-      await startServer();
+    .description("MCP サーバーを起動する（既定: stdio、--http で HTTP モード）")
+    .option("--http", "Streamable HTTP + OAuth モードで起動")
+    .option("--port <n>", "HTTP ポート（既定 3000）", (v: string) => Number(v))
+    .option("--host <h>", "HTTP バインドアドレス（既定 127.0.0.1）")
+    .action(async (opts: { http?: boolean; port?: number; host?: string }) => {
+      if (opts.http) {
+        const { startHttpServer } = await import("./http/server.js");
+        await startHttpServer({ port: opts.port, host: opts.host });
+      } else {
+        await startServer();
+      }
     });
 
   await program.parseAsync(argv);
