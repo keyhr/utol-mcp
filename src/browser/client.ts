@@ -255,8 +255,8 @@ export class UtolClient {
       contentId: string;
       endDate?: string | null;
     },
-    destPath: string,
-  ): Promise<{ bytes: number }> {
+    destPath?: string,
+  ): Promise<{ bytes: number; buffer: Buffer }> {
     return this.schedule(async () => {
       await this.ensureAuth();
       const context = await this.ensureContext();
@@ -292,10 +292,12 @@ export class UtolClient {
         if (looksLikeLoginPage(res.url(), body)) throw new NotAuthenticatedError();
       }
       if (!res.ok()) throw new Error(`ダウンロードに失敗しました (HTTP ${res.status()})`);
-      await mkdir(dirname(destPath), { recursive: true });
       const buffer = await res.body();
-      await pipeline(Readable.from(buffer), createWriteStream(destPath));
-      return { bytes: buffer.byteLength };
+      if (destPath) {
+        await mkdir(dirname(destPath), { recursive: true });
+        await pipeline(Readable.from(buffer), createWriteStream(destPath));
+      }
+      return { bytes: buffer.byteLength, buffer };
     });
   }
 

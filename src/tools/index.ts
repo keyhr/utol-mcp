@@ -305,12 +305,13 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- download_material ---
   server.tool(
     "download_material",
-    "教材ファイルを単一・オンデマンドでローカルへ保存する。大量DL不可。受講登録済みコースのみ。" +
-      "get_course の materials[].resourceId で対象教材を指定する。",
+    "教材ファイルを単一・オンデマンドで取得する。大量DL不可。受講登録済みコースのみ。" +
+      "get_course の materials[].resourceId で対象教材を指定する。" +
+      "destPath を指定するとローカルへ保存し、省略するとレスポンスにファイル内容を含めて返す（リモートLLM向け）。",
     {
       idnumber: z.string().describe("コースの idnumber"),
       resourceId: z.string().describe("教材の resourceId（get_course の materials[].resourceId）"),
-      destPath: z.string().describe("保存先の絶対パス"),
+      destPath: z.string().optional().describe("保存先の絶対パス（省略するとファイル内容をインラインで返す）"),
     },
     async ({ idnumber, resourceId, destPath }, extra) => {
       try {
@@ -331,7 +332,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
         if (!material.fileName || !material.objectName || !material.contentId) {
           throw new UtolError("この教材はダウンロードに必要な情報を欠いています。");
         }
-        const { bytes } = await deps.client.downloadMaterial(
+        const { bytes, buffer } = await deps.client.downloadMaterial(
           {
             idnumber,
             fileName: material.fileName,
@@ -342,7 +343,23 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
           },
           destPath,
         );
-        return ok({ saved: destPath, bytes, fileName: material.fileName });
+        if (destPath) {
+          return ok({ saved: destPath, bytes, fileName: material.fileName });
+        }
+        const mimeType = guessMimeType(material.fileName);
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify({ fileName: material.fileName, bytes, mimeType }) },
+            {
+              type: "resource" as const,
+              resource: {
+                uri: `utol://material/${encodeURIComponent(idnumber)}/${encodeURIComponent(resourceId)}/${encodeURIComponent(material.fileName)}`,
+                mimeType,
+                blob: buffer.toString("base64"),
+              },
+            },
+          ],
+        };
       } catch (err) {
         return fail(err);
       }
@@ -630,4 +647,29 @@ function toPath(urlOrPath: string): string {
   } catch {
     return urlOrPath;
   }
+}
+
+const MIME_MAP: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".zip": "application/zip",
+  ".mp4": "video/mp4",
+  ".mp3": "audio/mpeg",
+};
+
+function guessMimeType(fileName: string): string {
+  const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+  return MIME_MAP[ext] ?? "application/octet-stream";
 }
