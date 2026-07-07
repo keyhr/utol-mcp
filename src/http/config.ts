@@ -1,6 +1,6 @@
 export function httpPort(): number {
   const raw = Number(process.env.UTOL_MCP_HTTP_PORT);
-  return Number.isFinite(raw) ? raw : 3000;
+  return Number.isFinite(raw) ? raw : 51893;
 }
 
 export function httpHost(): string {
