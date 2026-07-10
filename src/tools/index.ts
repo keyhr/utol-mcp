@@ -126,7 +126,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- auth_status ---
   server.tool(
     "auth_status",
-    "UTOL にログイン済みかを確認する。未ログインなら手動ログインを案内する（自動ログインはしない）。",
+    "UTOL にログイン済みかを確認する（ログイン状態・認証状態・セッション有効性・login status）。" +
+      "未ログインなら手動ログインを案内する（自動ログインはしない）。",
     {},
     async (_args, extra) => {
       try {
@@ -156,7 +157,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- list_courses ---
   server.tool(
     "list_courses",
-    "受講登録している講義（時間割）の一覧を取得する。",
+    "受講登録している講義の一覧を取得する（履修中の授業・科目・時間割・登録している講義・courses・timetable）。" +
+      "1 つの講義の詳細（教材・課題・お知らせ）は get_course。",
     {
       refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得"),
     },
@@ -184,7 +186,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- get_course ---
   server.tool(
     "get_course",
-    "講義の詳細（お知らせ・教材一覧・課題一覧）を取得する。受講登録中コースのみ。",
+    "1 つの講義の詳細（お知らせ・教材/資料一覧・課題一覧）を取得する" +
+      "（授業ページ・科目ページ・講義トップ・course detail）。受講登録中コースのみ。" +
+      "教材の中身を読むには get_material、課題の詳細は get_assignment、講義の一覧は list_courses。",
     {
       idnumber: z.string().describe("コースの idnumber（例: 2025_0340_FEN-EE3902E1_01）"),
       refresh: z.boolean().optional(),
@@ -236,7 +240,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- list_assignments ---
   server.tool(
     "list_assignments",
-    "全科目横断の課題・テスト一覧と締切を取得する。",
+    "全科目を横断した課題・テストの一覧と締切を取得する" +
+      "（宿題・レポート・課題・小テスト・提出物・やること・締切・期限・deadline・todo）。" +
+      "特定コース単位は get_course、個別課題の詳細（本文・添付）は get_assignment。",
     { refresh: z.boolean().optional() },
     async ({ refresh }, extra) => {
       try {
@@ -256,7 +262,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- get_assignment ---
   server.tool(
     "get_assignment",
-    "課題の詳細（説明・締切・添付・提出状況）を取得する。読み取りのみ・受講登録済みコースのみ。",
+    "1 つの課題の詳細（説明本文・締切・添付ファイル・提出状況）を取得する" +
+      "（宿題・レポート・提出物の中身/内容・assignment detail）。" +
+      "読み取りのみ・受講登録済みコースのみ。全科目の課題一覧は list_assignments。",
     {
       idnumber: z.string().describe("コースの idnumber"),
       url: z.string().describe("課題詳細ページの URL（list_assignments/get_course の url）"),
@@ -276,7 +284,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- get_syllabus ---
   server.tool(
     "get_syllabus",
-    "シラバスを取得する（UTAS のシラバス参照ページ）。公開情報のため受講登録外コースも取得可。" +
+    "シラバスを取得する（UTAS のシラバス参照ページ。授業計画・講義概要・成績評価方法・教科書・履修要件・syllabus）。" +
+      "公開情報のため受講登録外コースも取得可。" +
       "受講登録済みコースは idnumber のみで可。受講登録外コースは search_courses が返す syllabusUrl を渡す。",
     {
       idnumber: z.string().describe("コースの idnumber"),
@@ -319,7 +328,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- search_courses ---
   server.tool(
     "search_courses",
-    "UTOL のコース検索。受講登録外コースも対象だが、返却は公開カタログ情報（名称・教員・開講期・開講組織・概要・リンク）のみ。",
+    "UTOL のコース検索（授業を探す・科目検索・講義検索・履修していない授業を調べる・course search）。" +
+      "キーワード・教員名・年度で検索。受講登録外コースも対象だが、返却は公開カタログ情報" +
+      "（名称・教員・開講期・開講組織・概要・リンク）のみ。受講中コースの一覧は list_courses。",
     {
       keyword: z.string().optional().describe("フリーワード（コース名・教員名・概要）"),
       teacher: z.string().optional().describe("教員名"),
@@ -343,7 +354,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- get_material （内容を LLM コンテキストへ取り込む＝読む用途） ---
   server.tool(
     "get_material",
-    "教材ファイルの内容を LLM が読める形式で返す（読む・要約・解析する用途）。単一・オンデマンド。" +
+    "教材ファイルの内容を LLM が読める形式で返す（教材・資料・スライド・レジュメ・講義プリント・配布資料・PDF を読む/要約する/解析する用途）。単一・オンデマンド。" +
       "受講登録済みコースのみ。get_course の materials[].resourceId で対象を指定する。" +
       "ファイルとして手元に残したい場合は download_material を使う。",
     {
@@ -368,7 +379,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- download_material （生ファイルをクライアントのローカルへ届ける＝保存用途） ---
   server.tool(
     "download_material",
-    "教材ファイルをクライアントのローカルへダウンロードする（ファイルとして残す用途）。単一・オンデマンド。" +
+    "教材ファイルをクライアントのローカルへダウンロードする（資料・スライド・PDF・docx/xlsx/zip 等をファイルとして保存/残す用途・download・save）。単一・オンデマンド。" +
       "受講登録済みコースのみ。get_course の materials[].resourceId で対象を指定する。" +
       "stdio 接続ではサーバーローカルのディスクへ保存し、HTTP 接続では取得用の一時 URL を返す。" +
       "内容を読みたいだけなら get_material を使う。",
@@ -397,7 +408,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- list_announcements （時間割ヘッダーの吹き出し＝お知らせ） ---
   server.tool(
     "list_announcements",
-    "お知らせ一覧を取得する（時間割ヘッダー左上の吹き出しアイコン）。",
+    "お知らせ一覧を取得する（時間割ヘッダー左上の吹き出しアイコン。教員・事務からの連絡/掲示/通知・announcements）。" +
+      "※教材追加・提出等の『最近の活動』は list_updates、個人宛メッセージは list_messages。",
     { refresh: z.boolean().optional() },
     async ({ refresh }, extra) => {
       try {
@@ -417,7 +429,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- list_updates （時間割ヘッダーのベル＝更新情報・最近の活動） ---
   server.tool(
     "list_updates",
-    "更新情報（最近の活動）を取得する（時間割ヘッダー左上のベルアイコン）。教材追加・課題追加・提出・お知らせ等の通知。",
+    "更新情報＝最近の活動を取得する（時間割ヘッダー左上のベルアイコン。教材追加・課題追加・提出・お知らせ等の通知/アクティビティ・updates・activity・new）。" +
+      "※教員からのお知らせ本体は list_announcements、個人宛メッセージは list_messages。",
     { refresh: z.boolean().optional() },
     async ({ refresh }, extra) => {
       try {
@@ -437,7 +450,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- list_messages ---
   server.tool(
     "list_messages",
-    "メッセージ一覧（UTOL のメッセージ＝inquiry）を取得する。一覧のメタ情報のみで本文は含まない。",
+    "メッセージ一覧を取得する（UTOL のメッセージ＝inquiry。個人宛の問い合わせ/連絡・受信箱・messages・inbox）。" +
+      "一覧のメタ情報のみで本文は含まない。※全体向けお知らせは list_announcements、活動通知は list_updates。",
     { refresh: z.boolean().optional() },
     async ({ refresh }, extra) => {
       try {
@@ -457,7 +471,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- set_task_no_submission （書き込み操作・ガードレール付き） ---
   server.tool(
     "set_task_no_submission",
-    "課題の「提出不要」フラグを変更する（提出不要⇔未提出、可逆）。" +
+    "課題の「提出不要」フラグを変更する（提出不要⇔未提出、可逆。課題を提出不要にする/未提出に戻す・非表示/done扱いにする）。" +
       "【書き込み操作】confirm:true が無い場合は実行せずプレビューを返す。実行は監査ログに記録される。",
     {
       idnumber: z.string().describe("コースの idnumber"),
@@ -537,7 +551,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- register_course （書き込み操作・ガードレール付き） ---
   server.tool(
     "register_course",
-    "コースを受講登録する。【書き込み操作・受講登録（UTOL上のデータ）に影響】confirm:true が無い場合はプレビューのみ。実行は監査ログに記録。可逆（unregister_course で解除可能）。",
+    "コースを受講登録する（履修登録・受講登録・enroll。search_courses で見つけたコースを登録）。" +
+      "【書き込み操作・受講登録（UTOL上のデータ）に影響】confirm:true が無い場合はプレビューのみ。実行は監査ログに記録。可逆（unregister_course で解除可能）。",
     {
       idnumber: z.string().describe("登録するコースの idnumber（search_courses で取得）"),
       confirm: z.boolean().optional().describe("true で実際に登録を実行。省略時はプレビューのみ。"),
@@ -583,7 +598,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- unregister_course （書き込み操作・ガードレール付き） ---
   server.tool(
     "unregister_course",
-    "コースの受講登録を解除する。【書き込み操作・受講登録（UTOL上のデータ）に影響／要注意】confirm:true が無い場合はプレビューのみ。実行は監査ログに記録。",
+    "コースの受講登録を解除する（履修取消・受講解除・登録削除・履修放棄・unenroll・drop）。" +
+      "【書き込み操作・受講登録（UTOL上のデータ）に影響／要注意】confirm:true が無い場合はプレビューのみ。実行は監査ログに記録。",
     {
       idnumber: z.string().describe("解除するコースの idnumber"),
       confirm: z.boolean().optional().describe("true で実際に解除を実行。省略時はプレビューのみ。"),
@@ -623,7 +639,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- refresh_cache ---
   server.tool(
     "refresh_cache",
-    "主要な一覧（受講登録コース・課題一覧）を再取得してキャッシュを更新する。",
+    "主要な一覧（受講登録コース・課題一覧）を再取得してキャッシュを更新する（最新化・再読み込み・reload・refresh・キャッシュクリア）。",
     {},
     async (_args, extra) => {
       try {
