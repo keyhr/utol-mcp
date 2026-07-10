@@ -158,6 +158,7 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     "list_courses",
     "受講登録している講義の一覧を取得する（履修中の授業・科目・時間割・登録している講義・courses・timetable）。" +
+      "各コースの idnumber・name・teachers・day・year・url を返す。ログイン必須。" +
       "1 つの講義の詳細（教材・課題・お知らせ）は get_course。",
     {
       refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得"),
@@ -242,8 +243,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     "list_assignments",
     "全科目を横断した課題・テストの一覧と締切を取得する" +
       "（宿題・レポート・課題・小テスト・提出物・やること・締切・期限・deadline・todo）。" +
+      "各課題の title・courseName・kind（assignment/test/questionnaire）・dueAt・submitted・contentsId・url を返す。ログイン必須。" +
       "特定コース単位は get_course、個別課題の詳細（本文・添付）は get_assignment。",
-    { refresh: z.boolean().optional() },
+    { refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得") },
     async ({ refresh }, extra) => {
       try {
         assertToolAllowed("list_assignments", extra);
@@ -409,8 +411,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     "list_announcements",
     "お知らせ一覧を取得する（時間割ヘッダー左上の吹き出しアイコン。教員・事務からの連絡/掲示/通知・announcements）。" +
+      "各お知らせの title・postedAt・courseIdnumber を返す。ログイン必須。" +
       "※教材追加・提出等の『最近の活動』は list_updates、個人宛メッセージは list_messages。",
-    { refresh: z.boolean().optional() },
+    { refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得") },
     async ({ refresh }, extra) => {
       try {
         assertToolAllowed("list_announcements", extra);
@@ -430,8 +433,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     "list_updates",
     "更新情報＝最近の活動を取得する（時間割ヘッダー左上のベルアイコン。教材追加・課題追加・提出・お知らせ等の通知/アクティビティ・updates・activity・new）。" +
+      "各更新の text・module・action・courseIdnumber・at を返す。ログイン必須。" +
       "※教員からのお知らせ本体は list_announcements、個人宛メッセージは list_messages。",
-    { refresh: z.boolean().optional() },
+    { refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得") },
     async ({ refresh }, extra) => {
       try {
         assertToolAllowed("list_updates", extra);
@@ -451,8 +455,9 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   server.tool(
     "list_messages",
     "メッセージ一覧を取得する（UTOL のメッセージ＝inquiry。個人宛の問い合わせ/連絡・受信箱・messages・inbox）。" +
-      "一覧のメタ情報のみで本文は含まない。※全体向けお知らせは list_announcements、活動通知は list_updates。",
-    { refresh: z.boolean().optional() },
+      "各メッセージの title・participant・status（未読/既読/回答済）・courseName・createdAt・updatedAt・url を返す。本文は含まない。ログイン必須。" +
+      "※全体向けお知らせは list_announcements、活動通知は list_updates。",
+    { refresh: z.boolean().optional().describe("true でキャッシュを無視して再取得") },
     async ({ refresh }, extra) => {
       try {
         assertToolAllowed("list_messages", extra);
@@ -639,7 +644,8 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
   // --- refresh_cache ---
   server.tool(
     "refresh_cache",
-    "主要な一覧（受講登録コース・課題一覧）を再取得してキャッシュを更新する（最新化・再読み込み・reload・refresh・キャッシュクリア）。",
+    "主要な一覧（受講登録コース・課題一覧）を再取得してキャッシュを更新する（最新化・再読み込み・reload・refresh・キャッシュクリア）。" +
+      "list_courses と list_assignments のキャッシュを強制リフレッシュし、更新後の件数と時刻を返す。ログイン必須。",
     {},
     async (_args, extra) => {
       try {
