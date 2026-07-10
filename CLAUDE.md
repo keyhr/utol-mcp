@@ -17,7 +17,8 @@
 - `get_assignment` — `idnumber`, `url`。課題詳細（読み取りのみ）。
 - `get_syllabus` — `idnumber`, `syllabusUrl?`。シラバス（UTAS）。受講登録外は `search_courses` の `syllabusUrl` を渡す。
 - `search_courses` — `keyword?`, `teacher?`, `year?`, `limit?`。コース検索（受講登録外可・公開情報のみ）。
-- `download_material` — `idnumber`, `resourceId`, `mode?`。**教材の単一DLのみ**。`resourceId` は `get_course` の `materials[].resourceId`。`mode` は `"text"`（既定・PDF テキスト抽出）または `"image"`（PDF ページ画像化）。画像ファイルは mode によらず ImageContent で返す。
+- `get_material` — `idnumber`, `resourceId`, `mode?`。**教材内容を読む用途**（LLM コンテキストへ取り込む）。単一DLのみ。`resourceId` は `get_course` の `materials[].resourceId`。`mode` は `"text"`（既定・PDF テキスト抽出）または `"image"`（PDF ページ画像化）。画像ファイルは mode によらず ImageContent で返す。抽出非対応形式（docx/xlsx/zip 等）は `download_material` へ誘導。
+- `download_material` — `idnumber`, `resourceId`, `destPath?`。**ファイルとして残す用途**（クライアントのローカルへ保存）。単一DLのみ。stdio 接続ではサーバーローカルのディスクへ保存し `{saved,bytes,fileName}` を返す（`destPath` 省略時は `~/.utol-mcp/downloads/`）。HTTP 接続では取得用の一時 URL を返す（`{url,fileName,bytes,expiresAt}`。`destPath` は無視）。
 - `list_announcements` — `refresh?`。お知らせ（ヘッダー吹き出し）。
 - `list_updates` — `refresh?`。更新情報＝最近の活動（ヘッダーベル）。
 - `list_messages` — `refresh?`。メッセージ一覧（/lms/inquiry_list）。

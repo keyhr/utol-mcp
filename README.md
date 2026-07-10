@@ -62,12 +62,15 @@ Claude Desktop などの設定ファイルに次を追加します。
 | `get_assignment` | 課題詳細（読み取りのみ） | `idnumber`, `url` |
 | `get_syllabus` | シラバス（UTAS 参照） | `idnumber`, `syllabusUrl?` |
 | `search_courses` | コース検索（受講登録外可・公開カタログ情報のみ） | `keyword?`, `teacher?`, `year?` |
-| `download_material` | 教材ファイルの単一ダウンロード | `idnumber`, `resourceId`, `destPath` |
+| `get_material` | 教材内容を読む（LLM コンテキストへ取り込む） | `idnumber`, `resourceId`, `mode?` |
+| `download_material` | 教材ファイルをローカルへダウンロード | `idnumber`, `resourceId`, `destPath?` |
 | `list_messages` | メッセージ一覧（メタのみ・本文なし） | `refresh?` |
 | `refresh_cache` | 主要一覧の再取得 | — |
 
-- `get_course` / `get_assignment` / `download_material` は、受講登録中のコースのみ対象です。
-- `download_material` の対象は `get_course` が返す `materials[].resourceId` で指定します。
+- `get_course` / `get_assignment` / `get_material` / `download_material` は、受講登録中のコースのみ対象です。
+- `get_material` / `download_material` の対象は `get_course` が返す `materials[].resourceId` で指定します。
+- `get_material` は内容を読む用途（`mode` は `text`＝テキスト抽出／`image`＝ページ画像化）。抽出非対応形式は `download_material` を使ってください。
+- `download_material` はファイルとして残す用途です。stdio 接続ではサーバーローカルのディスクへ保存（`destPath` 省略時は `~/.utol-mcp/downloads/`）、HTTP 接続では取得用の一時 URL（短TTL・単回使用）を返し、`curl` で保存します。
 - 受講登録外コースは `search_courses` が返す公開カタログ情報とシラバスのみを参照できます。
 
 ### 書き込み操作

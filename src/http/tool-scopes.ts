@@ -29,8 +29,8 @@ export const TOOL_GROUPS: ToolGroup[] = [
   {
     id: "download",
     label: "ダウンロード",
-    description: "教材ファイルのダウンロード",
-    tools: ["download_material"],
+    description: "教材ファイルの取得（内容読み取り・ローカル保存）",
+    tools: ["get_material", "download_material"],
     defaultOn: true,
   },
   {

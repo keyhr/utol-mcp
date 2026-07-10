@@ -8,6 +8,7 @@ import { createMcpServer, createSharedDeps } from "../mcp/server.js";
 import type { ToolDeps } from "../tools/index.js";
 import { OAuthStore } from "./oauth-store.js";
 import { UtolOAuthProvider } from "./oauth-provider.js";
+import { MaterialStore, UrlFileSink } from "./material-store.js";
 import { httpPort, httpHost, issuerUrl } from "./config.js";
 import { logger } from "../logger.js";
 
@@ -25,13 +26,31 @@ export async function startHttpServer(opts?: {
   await store.load();
   const provider = new UtolOAuthProvider(store);
 
-  const deps = await createSharedDeps();
+  const materialStore = new MaterialStore();
+  const deps = await createSharedDeps(new UrlFileSink(materialStore, issuer));
 
   const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: McpServer }>();
 
   const app = express();
 
   const resourceServerUrl = new URL(MCP_PATH, issuer);
+
+  // 教材ダウンロード用のケイパビリティ URL（推測不能トークン・短TTL・単回使用）。
+  // MCP のコンテキストを経由せずに生ファイルをクライアントへ渡すための経路。
+  app.get("/dl/:token", (req, res) => {
+    const entry = materialStore.take(req.params.token);
+    if (!entry) {
+      res.status(404).json({ error: "リンクが無効か、期限切れか、既に使用済みです。" });
+      return;
+    }
+    res.setHeader("Content-Type", entry.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(entry.fileName)}`,
+    );
+    res.setHeader("Content-Length", String(entry.buffer.byteLength));
+    res.end(entry.buffer);
+  });
 
   app.use(mcpAuthRouter({
     provider,

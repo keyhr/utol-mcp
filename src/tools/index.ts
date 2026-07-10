@@ -20,10 +20,13 @@ import { parseAssignment } from "../parsers/assignment.js";
 import type { CourseSummary } from "../schemas/index.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { extractText, renderPages } from "../util/pdf.js";
+import type { Material, MaterialSink } from "./material-sink.js";
 
 export interface ToolDeps {
   client: UtolClient;
   cache: CacheStore;
+  /** 教材ファイルの配送戦略（stdio=ディスク保存 / HTTP=一時URL）。 */
+  materialSink: MaterialSink;
 }
 
 /** 成功結果を JSON テキストとして返す。 */
@@ -83,6 +86,40 @@ async function assertEnrolled(deps: ToolDeps, idnumber: string): Promise<void> {
         "受講登録外コースの教材・課題等の内部コンテンツは取得できません（公開情報はシラバス/検索を利用してください）。",
     );
   }
+}
+
+/**
+ * resourceId から教材のバイト列を取得する（get_material / download_material 共用）。
+ * 受講登録の確認・コース詳細からの教材解決・ダウンロードまでを行う。
+ */
+async function fetchMaterial(
+  deps: ToolDeps,
+  idnumber: string,
+  resourceId: string,
+): Promise<Material> {
+  await assertEnrolled(deps, idnumber);
+  const course = await deps.cache.getOrFetch(`course:${idnumber}`, async () =>
+    parseCourse(
+      await deps.client.getHtml(`${UTOL_PATHS.course}?idnumber=${encodeURIComponent(idnumber)}`),
+      idnumber,
+    ),
+  );
+  const material = course.materials.find((m) => m.resourceId === resourceId);
+  if (!material) {
+    throw new UtolError(`resourceId=${resourceId} の教材が見つかりません。`);
+  }
+  if (!material.fileName || !material.objectName || !material.contentId) {
+    throw new UtolError("この教材はダウンロードに必要な情報を欠いています。");
+  }
+  const { bytes, buffer } = await deps.client.downloadMaterial({
+    idnumber,
+    fileName: material.fileName,
+    objectName: material.objectName,
+    resourceId,
+    contentId: material.contentId,
+    endDate: material.openEndDate,
+  });
+  return { buffer, fileName: material.fileName, bytes };
 }
 
 export function registerTools(server: McpServer, deps: ToolDeps): void {
@@ -303,11 +340,12 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     },
   );
 
-  // --- download_material ---
+  // --- get_material （内容を LLM コンテキストへ取り込む＝読む用途） ---
   server.tool(
-    "download_material",
-    "教材ファイルを取得し、LLM が読める形式で返す。単一・オンデマンド。受講登録済みコースのみ。" +
-      "get_course の materials[].resourceId で対象教材を指定する。",
+    "get_material",
+    "教材ファイルの内容を LLM が読める形式で返す（読む・要約・解析する用途）。単一・オンデマンド。" +
+      "受講登録済みコースのみ。get_course の materials[].resourceId で対象を指定する。" +
+      "ファイルとして手元に残したい場合は download_material を使う。",
     {
       idnumber: z.string().describe("コースの idnumber"),
       resourceId: z.string().describe("教材の resourceId（get_course の materials[].resourceId）"),
@@ -318,32 +356,38 @@ export function registerTools(server: McpServer, deps: ToolDeps): void {
     },
     async ({ idnumber, resourceId, mode }, extra) => {
       try {
+        assertToolAllowed("get_material", extra);
+        const material = await fetchMaterial(deps, idnumber, resourceId);
+        return materialToContent(material.buffer, material.fileName, material.bytes, mode ?? "text");
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // --- download_material （生ファイルをクライアントのローカルへ届ける＝保存用途） ---
+  server.tool(
+    "download_material",
+    "教材ファイルをクライアントのローカルへダウンロードする（ファイルとして残す用途）。単一・オンデマンド。" +
+      "受講登録済みコースのみ。get_course の materials[].resourceId で対象を指定する。" +
+      "stdio 接続ではサーバーローカルのディスクへ保存し、HTTP 接続では取得用の一時 URL を返す。" +
+      "内容を読みたいだけなら get_material を使う。",
+    {
+      idnumber: z.string().describe("コースの idnumber"),
+      resourceId: z.string().describe("教材の resourceId（get_course の materials[].resourceId）"),
+      destPath: z
+        .string()
+        .optional()
+        .describe(
+          "保存先パス（stdio のみ有効）。省略時は既定ダウンロードディレクトリへ保存。HTTP 接続では無視される。",
+        ),
+    },
+    async ({ idnumber, resourceId, destPath }, extra) => {
+      try {
         assertToolAllowed("download_material", extra);
-        await assertEnrolled(deps, idnumber);
-        const course = await deps.cache.getOrFetch(`course:${idnumber}`, async () =>
-          parseCourse(
-            await deps.client.getHtml(
-              `${UTOL_PATHS.course}?idnumber=${encodeURIComponent(idnumber)}`,
-            ),
-            idnumber,
-          ),
-        );
-        const material = course.materials.find((m) => m.resourceId === resourceId);
-        if (!material) {
-          throw new UtolError(`resourceId=${resourceId} の教材が見つかりません。`);
-        }
-        if (!material.fileName || !material.objectName || !material.contentId) {
-          throw new UtolError("この教材はダウンロードに必要な情報を欠いています。");
-        }
-        const { bytes, buffer } = await deps.client.downloadMaterial({
-          idnumber,
-          fileName: material.fileName,
-          objectName: material.objectName,
-          resourceId,
-          contentId: material.contentId,
-          endDate: material.openEndDate,
-        });
-        return materialToContent(buffer, material.fileName, bytes, mode ?? "text");
+        const material = await fetchMaterial(deps, idnumber, resourceId);
+        const result = await deps.materialSink.deliver(material, { destPath });
+        return ok(result);
       } catch (err) {
         return fail(err);
       }
@@ -693,21 +737,18 @@ function materialToContent(
     };
   }
 
+  // テキスト抽出・画像化に対応しない形式（docx/xlsx/zip 等）は、
+  // コンテキストへ載せず download_material でローカルへ落とすよう誘導する。
   return {
     content: [
       {
         type: "text" as const,
         text: JSON.stringify({
           ...meta,
-          note: "この形式のテキスト抽出・画像化には対応していません。生データを base64 で返します。",
+          note:
+            `この形式（${ext || "不明"}）はテキスト抽出・画像化に対応していません。` +
+            "download_material でファイルとしてダウンロードしてください。",
         }),
-      },
-      {
-        type: "resource" as const,
-        resource: {
-          uri: `utol://material/${encodeURIComponent(fileName)}`,
-          blob: buffer.toString("base64"),
-        },
       },
     ],
   };

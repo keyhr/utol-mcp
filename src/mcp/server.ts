@@ -5,6 +5,7 @@ import { CacheStore } from "../cache/store.js";
 import { ensureDataDir } from "../browser/session.js";
 import { logger } from "../logger.js";
 import { registerTools, type ToolDeps } from "../tools/index.js";
+import { LocalFileSink, type MaterialSink } from "../tools/material-sink.js";
 
 /**
  * ツール登録済みの McpServer を生成する。
@@ -18,10 +19,11 @@ export function createMcpServer(deps: ToolDeps): McpServer {
 
 /**
  * 共有リソース（UtolClient + CacheStore）を初期化する。
+ * 教材の配送戦略（materialSink）はトランスポートごとに異なるため、呼び出し側から注入する。
  */
-export async function createSharedDeps(): Promise<ToolDeps> {
+export async function createSharedDeps(materialSink: MaterialSink): Promise<ToolDeps> {
   await ensureDataDir();
-  return { client: new UtolClient(), cache: new CacheStore() };
+  return { client: new UtolClient(), cache: new CacheStore(), materialSink };
 }
 
 /**
@@ -29,7 +31,7 @@ export async function createSharedDeps(): Promise<ToolDeps> {
  * stdout は JSON-RPC 専用のため、ログは stderr のみに出す。
  */
 export async function startServer(): Promise<void> {
-  const deps = await createSharedDeps();
+  const deps = await createSharedDeps(new LocalFileSink());
   const server = createMcpServer(deps);
 
   const transport = new StdioServerTransport();

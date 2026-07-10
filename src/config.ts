@@ -38,6 +38,11 @@ export function cacheDir(): string {
   return join(dataDir(), "cache");
 }
 
+/** download_material（stdio）の既定保存先ディレクトリ。 */
+export function downloadsDir(): string {
+  return process.env.UTOL_MCP_DOWNLOADS_DIR ?? join(dataDir(), "downloads");
+}
+
 /**
  * レート制限設定。方針doc準拠で、直列かつ最小間隔を設ける。
  * 環境変数で調整可能だが、下限を設けて過剰アクセスを防ぐ。
