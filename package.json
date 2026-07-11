@@ -1,6 +1,6 @@
 {
   "name": "utol-mcp",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "個人用ローカル実行の UTOL (UTokyo LMS) MCP サーバー。読み取り中心・手動SSOログイン前提。",
   "type": "module",
   "bin": {
