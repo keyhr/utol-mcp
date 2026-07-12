@@ -266,6 +266,9 @@ export class UtolClient {
       if (!tempRes.ok()) throw new Error(`一時ファイル準備に失敗 (HTTP ${tempRes.status()})`);
       const fileId = tempBody.trim();
 
+      // 複合操作内の連続リクエストにも最小間隔を空ける（schedule の間隔は操作単位のため）。
+      await delay(minRequestIntervalMs());
+
       // 2) 本体を取得（フォーム #materialsSetDownFileForm の全フィールドを再現）
       const dlParams = new URLSearchParams({
         fileName: m.fileName,

@@ -19,3 +19,29 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Third-party licenses / 第三者ライセンスに関する注意
+
+The MIT license above applies to the original source code of this project
+(utol-mcp) authored by the copyright holder. This project depends on
+third-party packages under their own licenses. In particular:
+
+  - mupdf (MuPDF, by Artifex Software) is licensed under
+    AGPL-3.0-or-later.
+
+Because this project imports `mupdf` directly for PDF processing, a
+distributed or network-served build combining this project with MuPDF may
+be evaluated as a single combined work subject to the terms of the AGPL,
+including its source-availability requirements and the network-use clause
+(AGPL section 13). The MIT grant above covers only the original code of this
+project; it does not override the obligations attached to AGPL-licensed
+dependencies.
+
+If you intend to (a) publish this project as an executable package (e.g. to
+npm) or (b) serve it over a network to third parties, verify AGPL
+compliance for the combined work, or replace `mupdf` with a compatibly
+licensed alternative (e.g. pdfjs-dist, Apache-2.0), or obtain a separate
+commercial license for MuPDF from Artifex. Complying with these obligations
+is required regardless of whether the use is personal or non-commercial.
